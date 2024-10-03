@@ -1,0 +1,101 @@
+---
+- name: Setup Ubuntu Server with Apache, MySQL, and Docker
+  hosts: your_ubuntu_server  # Replace with your target server group or IP
+  become: yes  # Use sudo to run tasks that require root privileges
+  vars:
+    mysql_root_password: 'YourRootPassword'
+    db_name: 'hardik'
+    apache_conf_path: '/etc/apache2/sites-available/hardik.conf'
+
+  tasks:
+
+    - name: Update APT packages
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - apache2
+          - mysql-server
+          - docker.io
+        state: present
+
+    - name: Start and enable Apache service
+      systemd:
+        name: apache2
+        state: started
+        enabled: yes
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Secure MySQL installation
+      expect:
+        command: mysql_secure_installation
+        responses:
+          'Enter current password for root (enter for none):': ''
+          'Set root password? \[Y/n\]': 'Y'
+          'New password:': '{{ mysql_root_password }}'
+          'Re-enter new password:': '{{ mysql_root_password }}'
+          'Remove anonymous users? \[Y/n\]': 'Y'
+          'Disallow root login remotely? \[Y/n\]': 'Y'
+          'Remove test database and access to it? \[Y/n\]': 'Y'
+          'Reload privilege tables now? \[Y/n\]': 'Y'
+
+    - name: Create MySQL database
+      mysql_db:
+        name: '{{ db_name }}'
+        state: present
+        login_user: root
+        login_password: '{{ mysql_root_password }}'
+
+    - name: Create Apache configuration file
+      copy:
+        dest: '{{ apache_conf_path }}'
+        content: |
+          <VirtualHost *:80>
+              ServerAdmin webmaster@localhost
+              DocumentRoot /var/www/html
+
+              ErrorLog ${APACHE_LOG_DIR}/error.log
+              CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+              <Directory /var/www/html>
+                  Options Indexes FollowSymLinks
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+          </VirtualHost>
+
+    - name: Enable the new Apache site
+      command: a2ensite hardik.conf
+      args:
+        warn: false
+
+    - name: Disable the default Apache site
+      command: a2dissite 000-default.conf
+      args:
+        warn: false
+
+    - name: Restart Apache to apply changes
+      systemd:
+        name: apache2
+        state: restarted
+
+    - name: Pull Docker image
+      docker_image:
+        name: docker-image
+        tag: latest
+        source: pull
+
+    - name: Create a Docker container with ephemeral storage
+      docker_container:
+        name: my_container  
+        image: docker-image
+        state: started
+        volumes:
+          - /path/to/ephemeral/storage:/data
